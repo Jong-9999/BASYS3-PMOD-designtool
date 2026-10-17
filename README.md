@@ -2,7 +2,7 @@
 
 
 
-make the Basys 3 pmod screen easy to use!
+make the Basys 3 pmod (96*64) screen easy to use!
 
 
 
