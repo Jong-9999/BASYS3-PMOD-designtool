@@ -5,6 +5,9 @@
 make the Basys 3 pmod (96*64) screen easy to use!
 
 
+https://digilent.com/shop/pmod-oledrgb-96-x-64-rgb-oled-display-with-16-bit-color-resolution/
+
+
 
 just follow the below steps:
 
