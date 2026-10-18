@@ -27,6 +27,9 @@ just follow the below steps:
 great successs!
 
 
+**DO NOT REDRAW TRIANGLES IT WILL TAKE UP MANY LOGIC GATES**
+
+
 
 Credits:
 
