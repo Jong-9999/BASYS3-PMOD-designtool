@@ -209,6 +209,13 @@
   .prop label { font-size: 11.5px; color: var(--muted); }
   .prop label .w { color: var(--faint); }
   .prop-info { margin-top: 8px; font-size: 12px; color: var(--faint); }
+  .prop-text { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+  .prop-text label { font-size: 11.5px; color: var(--muted); }
+  .prop-text label .w { color: var(--faint); }
+  .prop-text input {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--panel); font-size: 14px;
+  }
+  .prop-text input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .prop-note { margin-top: 10px; }
   .prop-note input {
     width: 100%; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--panel); font-size: 13px;
@@ -294,7 +301,7 @@
     <span class="logo" aria-hidden="true"></span>
     <div>
       <h1>OLED Shape Designer</h1>
-      <p>96 × 64 pixels · RGB565 · generates <code>rectangle</code> / <code>circle</code> instances</p>
+      <p>96 × 64 pixels · RGB565 · generates <code>rectangle</code> / <code>circle</code> / <code>triangle</code> / <code>character</code> instances</p>
     </div>
   </div>
   <div class="actions">
@@ -329,6 +336,12 @@
           </button>
           <button data-tool="circle" title="Draw circle (C): press at the centre, drag out the radius">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/></svg><span class="lbl">Circle</span> <kbd>C</kbd>
+          </button>
+          <button data-tool="triangle" title="Draw triangle (T): click the three corners">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M8 2.5l6 11H2z"/></svg><span class="lbl">Triangle</span> <kbd>T</kbd>
+          </button>
+          <button data-tool="text" title="Text (A): click to place the top-left corner, then type in the panel">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5 8 2.5l5 11M5 9.5h6"/></svg><span class="lbl">Text</span> <kbd>A</kbd>
           </button>
         </div>
         <div class="spacer"></div>
@@ -438,7 +451,7 @@
   <form method="dialog">
     <div class="dlg-head">
       <h3>Import Verilog</h3>
-      <p>Paste code with <code>rectangle</code> / <code>circle</code> instances (and optionally <code>assign background_colour = …;</code>). This replaces the current drawing; Undo brings it back.</p>
+      <p>Paste code with <code>rectangle</code> / <code>circle</code> / <code>triangle</code> / <code>character</code> instances (and optionally <code>assign background_colour = …;</code>). This replaces the current drawing; Undo brings it back.</p>
     </div>
     <div class="dlg-body">
       <textarea id="importText" class="mono" spellcheck="false" placeholder="rectangle rectangle1 ( .pixel_index (pixel_index), .leftx (7'd10), ... );"></textarea>
@@ -507,8 +520,114 @@ function hsvToRgb(h, s, v) {
 }
 
 /* =====================================================================
+   5x7 font, unchanged from https://github.com/petabyt/font (font.h,
+   MIT licence, (c) 2020 Petabyte). Each glyph is 35 bits: 7 rows of 5,
+   top row first, '1' = pixel on. Same data as the character module.
+   ===================================================================== */
+const FONT = {
+  "a": "00000000000111000001011111000101111",
+  "b": "10000100001111010001100011000111110",
+  "c": "00000000000111010001100001000101110",
+  "d": "00001000010111110001100011000101111",
+  "e": "00000000000111010001111111000001111",
+  "f": "00110010010100011100010000100001000",
+  "g": "00000011111000110001011110000111110",
+  "h": "10000100001111010001100011000110001",
+  "i": "10000000001000010000100001000010000",
+  "j": "00001000000001100001000011000101110",
+  "k": "10000100001000110010111001001010001",
+  "l": "10000100001000010000100001000011000",
+  "m": "00000000001111010101101011010110101",
+  "n": "00000000001111010001100011000110001",
+  "o": "00000000000111010001100011000101110",
+  "p": "00000011100100101001011100100001000",
+  "q": "00000000000011101001001110000100001",
+  "r": "00000000001011111000100001000010000",
+  "s": "00000000000111110000011100000111110",
+  "t": "01000010001110001000010000100000110",
+  "u": "00000000001000110001100011000101110",
+  "v": "00000000001000110001100010101000100",
+  "w": "00000000001000110001101011010101010",
+  "x": "00000000001000101010001000101010001",
+  "y": "00000000001000110001011110000111110",
+  "z": "00000000001111100010001000100011111",
+  "A": "01110100011000110001111111000110001",
+  "B": "11110100011000111110100011000111110",
+  "C": "01111100001000010000100001000001111",
+  "D": "11110100011000110001100011000111110",
+  "E": "11111100001000011111100001000011111",
+  "F": "11111100001000011111100001000010000",
+  "G": "01111100001000010011100011000101111",
+  "H": "10001100011000111111100011000110001",
+  "I": "10000100001000010000100001000010000",
+  "J": "00001000010000100001000010000111110",
+  "K": "10001100101010011000101001001010001",
+  "L": "10000100001000010000100001000011111",
+  "M": "10001110111010110001100011000110001",
+  "N": "10001110011010110011100011000110001",
+  "O": "01110100011000110001100011000101110",
+  "P": "11110100011000111110100001000010000",
+  "Q": "01110100011000110001100011001101111",
+  "R": "11110100011000110001111101000110001",
+  "S": "01111100001000001110000010000111110",
+  "T": "11111001000010000100001000010000100",
+  "U": "10001100011000110001100011000101110",
+  "V": "10001100011000110001100010101000100",
+  "W": "10001100011000110001101011101110001",
+  "X": "10001100010101000100010101000110001",
+  "Y": "10001100011000101110001000010000100",
+  "Z": "11111000010001000100010001000011111",
+  "0": "01110100011001110101110011000101110",
+  "1": "11000010000100001000010000100001000",
+  "2": "01110100010000100110010001000011111",
+  "3": "11110000010000101110000010000111110",
+  "4": "10001100011000111111000010000100001",
+  "5": "11111100001000011110000010000111110",
+  "6": "01111100001000001110100011000101110",
+  "7": "11111000010000100110010000100001000",
+  "8": "01110100011000101110100011000101110",
+  "9": "01110100011000101111000010000101110",
+  ",": "00000000000000000000000000010001000",
+  ".": "00000000000000000000000000000010000",
+};
+const MAX_SCALE = 9;                               // 7 * 9 = 63 rows, the tallest that fits
+const cleanText = (t) => String(t == null ? '' : t).replace(/[^A-Za-z0-9,. ]/g, '').slice(0, 32);
+const GLYPH_W = {};                                // columns each glyph actually uses
+for (const [c, bits] of Object.entries(FONT)) {
+  let w = 0;
+  for (let i = 0; i < 35; i++) if (bits[i] === '1') w = Math.max(w, i % 5 + 1);
+  GLYPH_W[c] = w;
+}
+// Letter positions spaced like the font's lib.c: each glyph advances by its
+// used width + 2 and a space by 5, all times the scale.
+function layoutText(s) {
+  const out = [];
+  let x = s.leftx;
+  for (const c of s.text) {
+    if (c === ' ') { x += 5 * s.scale; continue; }
+    if (!FONT[c]) continue;
+    if (x > MAX_X) break;                          // leftx is a 7-bit port; past the edge is invisible anyway
+    out.push({ c, x });
+    x += (GLYPH_W[c] + 2) * s.scale;
+  }
+  return out;
+}
+// Same test as the character module: the font pixel at (dx / scale, dy / scale)
+function charLit(c, ox, oy, sc, x, y) {
+  const dx = x - ox, dy = y - oy;
+  if (dx < 0 || dy < 0 || dx >= 5 * sc || dy >= 7 * sc) return false;
+  return FONT[c][Math.floor(dy / sc) * 5 + Math.floor(dx / sc)] === '1';
+}
+function textBox(s) {                              // [x0, y0, x1, y1] around the drawn letters
+  const L = layoutText(s), last = L[L.length - 1];
+  const x1 = last ? last.x + Math.max(1, GLYPH_W[last.c]) * s.scale - 1 : s.leftx + 5 * s.scale - 1;
+  return [s.leftx, s.upy, x1, s.upy + 7 * s.scale - 1];
+}
+
+/* =====================================================================
    Document state. Shapes are stored with the exact port names of the
-   rectangle / circle modules, in draw order (index 0 = drawn first).
+   rectangle / circle / triangle / character modules, in draw order
+   (index 0 = drawn first). A text shape becomes one character per letter.
    ===================================================================== */
 const EXAMPLE = {
   bg: [255, 0, 0],                                          // 16'hF800
@@ -525,6 +644,7 @@ let selectedId = null;
 let tool = 'rectangle';
 let colourTarget = 'shape';          // 'shape' | 'bg'
 let drawRgb = [0, 0, 255];           // colour for new shapes
+let textScale = 2;                   // scale for new text
 const opts = { declareBg: true, comments: true, grid: true, full: false };
 
 function cleanRgb(rgb, fallback) {
@@ -545,6 +665,15 @@ function cleanShape(s) {
     return { id: nextId++, type: 'circle', centrex: toInt(s.centrex, 0, MAX_X), centrey: toInt(s.centrey, 0, MAX_Y),
              radius: toInt(s.radius, 0, MAX_R), rgb, note };
   }
+  if (s.type === 'triangle') {
+    return { id: nextId++, type: 'triangle',
+             x1: toInt(s.x1, 0, MAX_X), y1: toInt(s.y1, 0, MAX_Y), x2: toInt(s.x2, 0, MAX_X),
+             y2: toInt(s.y2, 0, MAX_Y), x3: toInt(s.x3, 0, MAX_X), y3: toInt(s.y3, 0, MAX_Y), rgb, note };
+  }
+  if (s.type === 'text') {
+    return { id: nextId++, type: 'text', leftx: toInt(s.leftx, 0, MAX_X), upy: toInt(s.upy, 0, MAX_Y),
+             scale: toInt(s.scale, 1, MAX_SCALE), text: cleanText(s.text), rgb, note };
+  }
   return null;
 }
 function makeDoc(src) {
@@ -554,24 +683,50 @@ function makeDoc(src) {
 const getShape = (id) => doc.shapes.find((s) => s.id === id) || null;
 const selected = () => getShape(selectedId);
 
-// Instance names follow draw order per type: rectangle1, rectangle2, circle1 ...
+// Names follow draw order per type: rectangle1, rectangle2, circle1, text1 ...
 function nameMap() {
-  const n = { rectangle: 0, circle: 0 }, m = new Map();
+  const n = { rectangle: 0, circle: 0, triangle: 0, text: 0 }, m = new Map();
   for (const s of doc.shapes) m.set(s.id, s.type + (++n[s.type]));
   return m;
 }
 
 /* =====================================================================
-   Geometry: identical tests to rectangle.v and circle.v
+   Geometry: identical tests to the rectangle, circle, triangle and
+   character modules in oled_modules.v
    ===================================================================== */
+// triangle: inside or on an edge when the three edge functions never disagree in sign
+function triInside(s, x, y) {
+  if (x < Math.min(s.x1, s.x2, s.x3) || x > Math.max(s.x1, s.x2, s.x3) ||
+      y < Math.min(s.y1, s.y2, s.y3) || y > Math.max(s.y1, s.y2, s.y3)) return false;
+  const e1 = (s.x2 - s.x1) * (y - s.y1) - (s.y2 - s.y1) * (x - s.x1);
+  const e2 = (s.x3 - s.x2) * (y - s.y2) - (s.y3 - s.y2) * (x - s.x2);
+  const e3 = (s.x1 - s.x3) * (y - s.y3) - (s.y1 - s.y3) * (x - s.x3);
+  return !((e1 < 0 || e2 < 0 || e3 < 0) && (e1 > 0 || e2 > 0 || e3 > 0));
+}
 function inside(s, x, y) {
   if (s.type === 'rectangle') return x >= s.leftx && x <= s.rightx && y >= s.upy && y <= s.downy;
+  if (s.type === 'triangle') return triInside(s, x, y);
+  if (s.type === 'text') return layoutText(s).some((g) => charLit(g.c, g.x, s.upy, s.scale, x, y));
   const dx = x - s.centrex, dy = y - s.centrey;
   return dx * dx + dy * dy <= s.radius * s.radius;
 }
 function bounds(s) {          // [x0, y0, x1, y1], unclipped
   if (s.type === 'rectangle') return [s.leftx, s.upy, s.rightx, s.downy];
+  if (s.type === 'triangle') {
+    return [Math.min(s.x1, s.x2, s.x3), Math.min(s.y1, s.y2, s.y3), Math.max(s.x1, s.x2, s.x3), Math.max(s.y1, s.y2, s.y3)];
+  }
+  if (s.type === 'text') return textBox(s);
   return [s.centrex - s.radius, s.centrey - s.radius, s.centrex + s.radius, s.centrey + s.radius];
+}
+// For picking with the mouse, text counts as its whole box (letters are thin)
+function hits(s, x, y) {
+  if (s.type !== 'text') return inside(s, x, y);
+  const [a, b, c, d] = textBox(s);
+  return x >= a && x <= c && y >= b && y <= d;
+}
+function pickShapeAt(x, y) {
+  for (let i = doc.shapes.length - 1; i >= 0; i--) if (hits(doc.shapes[i], x, y)) return doc.shapes[i];
+  return null;
 }
 function frameBuffer() {
   const buf = new Uint16Array(W * H).fill(to565(doc.bg));
@@ -751,14 +906,14 @@ function draw() {
 
   // Outline of the shape under the pointer (select tool)
   if (tool === 'select' && !gesture && hover && hover.inGrid) {
-    const h = topShapeAt(hover.x, hover.y);
+    const h = pickShapeAt(hover.x, hover.y);
     if (h && h.id !== selectedId) outline(h, 'rgba(255,255,255,.85)', [3 * dpr, 3 * dpr]);
   }
 
   const s = selected();
   if (s) {
-    outline(s, theme.accent, null);
-    if (tool === 'select') for (const h of handlesOf(s)) handle(h, s.type === 'circle');
+    outline(s, theme.accent, s.type === 'text' ? [4 * dpr, 3 * dpr] : null);
+    if (tool === 'select') for (const h of handlesOf(s)) handle(h, s.type === 'circle' || s.type === 'triangle');
   }
   if (gesture && s) liveLabel(s);
 }
@@ -769,6 +924,14 @@ function outline(s, color, dash) {
   ctx.beginPath();
   if (s.type === 'rectangle') {
     ctx.rect(gx + s.leftx * cell, gy + s.upy * cell, (s.rightx - s.leftx + 1) * cell, (s.downy - s.upy + 1) * cell);
+  } else if (s.type === 'triangle') {             // through the centres of the corner pixels
+    ctx.moveTo(gx + (s.x1 + .5) * cell, gy + (s.y1 + .5) * cell);
+    ctx.lineTo(gx + (s.x2 + .5) * cell, gy + (s.y2 + .5) * cell);
+    ctx.lineTo(gx + (s.x3 + .5) * cell, gy + (s.y3 + .5) * cell);
+    ctx.closePath();
+  } else if (s.type === 'text') {
+    const [a, b, c, d] = textBox(s);
+    ctx.rect(gx + a * cell, gy + b * cell, (c - a + 1) * cell, (d - b + 1) * cell);
   } else {
     ctx.arc(gx + (s.centrex + .5) * cell, gy + (s.centrey + .5) * cell, (s.radius + .5) * cell, 0, Math.PI * 2);
   }
@@ -794,6 +957,13 @@ function handlesOf(s) {
       { hx: 1, hy: 1, px: x1, py: y1, cur: 'nwse-resize' },   { hx: 0, hy: 1, px: xm, py: y1, cur: 'ns-resize' },
       { hx: -1, hy: 1, px: x0, py: y1, cur: 'nesw-resize' },  { hx: -1, hy: 0, px: x0, py: ym, cur: 'ew-resize' },
     ];
+  }
+  if (s.type === 'triangle') {
+    return [1, 2, 3].map((k) => ({ vi: k, px: gx + (s['x' + k] + .5) * cell, py: gy + (s['y' + k] + .5) * cell, cur: 'move' }));
+  }
+  if (s.type === 'text') {                          // bottom-right corner sets the scale
+    const [, , c, d] = textBox(s);
+    return [{ tscale: true, px: gx + (c + 1) * cell, py: gy + (d + 1) * cell, cur: 'nwse-resize' }];
   }
   const cx = gx + (s.centrex + .5) * cell, cy = gy + (s.centrey + .5) * cell, r = s.radius * cell;
   return [
@@ -821,9 +991,12 @@ function hitHandle(s, p) {
 
 function liveLabel(s) {
   const { dpr } = M;
-  const text = s.type === 'rectangle'
-    ? `${s.rightx - s.leftx + 1} × ${s.downy - s.upy + 1}   (${s.leftx},${s.upy})–(${s.rightx},${s.downy})`
-    : `r = ${s.radius}   centre (${s.centrex},${s.centrey})`;
+  let text;
+  if (s.type === 'rectangle') text = `${s.rightx - s.leftx + 1} × ${s.downy - s.upy + 1}   (${s.leftx},${s.upy})–(${s.rightx},${s.downy})`;
+  else if (s.type === 'circle') text = `r = ${s.radius}   centre (${s.centrex},${s.centrey})`;
+  else if (s.type === 'text') { const [a, b, c, d] = textBox(s); text = `scale ${s.scale}   ${c - a + 1} × ${d - b + 1}   at (${s.leftx},${s.upy})`; }
+  else if (gesture.kind === 'tri') text = gesture.phase === 1 ? `corner 2 → (${s.x2},${s.y2})   click to place` : `corner 3 → (${s.x3},${s.y3})   click to finish`;
+  else text = `(${s.x1},${s.y1})  (${s.x2},${s.y2})  (${s.x3},${s.y3})`;
   ctx.font = `600 ${Math.round(11.5 * dpr)}px system-ui, "Segoe UI", sans-serif`;
   const tw = ctx.measureText(text).width, bw = tw + 16 * dpr, bh = 22 * dpr;
   let x = (hover ? hover.dx : M.gx) + 14 * dpr, y = (hover ? hover.dy : M.gy) + 16 * dpr;
@@ -846,25 +1019,31 @@ function ptr(e) {
 const radiusTo = (cx, cy, p) => clamp(Math.round(Math.hypot(p.fx - .5 - cx, p.fy - .5 - cy)), 0, MAX_R);
 
 cv.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || gesture) return;
+  if (e.button !== 0) return;
   const p = ptr(e);
   hover = p;
+  if (gesture && gesture.kind === 'tri') { triClick(p, e); return; }
+  if (gesture) return;
   if (e.altKey) { if (p.inGrid) pickColourAt(p.x, p.y); return; }
   if (tool === 'select') {
     const s = selected(), h = s && hitHandle(s, p);
     if (h) gesture = { kind: 'resize', id: s.id, h, p0: p, orig: { ...s } };
     else {
-      const t = p.inGrid ? topShapeAt(p.x, p.y) : null;
+      const t = p.inGrid ? pickShapeAt(p.x, p.y) : null;
       selectShape(t ? t.id : null);
       if (t) gesture = { kind: 'move', id: t.id, p0: p, orig: { ...t } };
     }
   } else {
     if (!p.inGrid) return;
-    const s = tool === 'rectangle'
-      ? { id: nextId++, type: 'rectangle', leftx: p.x, rightx: p.x, upy: p.y, downy: p.y, rgb: drawRgb.slice(), note: '' }
-      : { id: nextId++, type: 'circle', centrex: p.x, centrey: p.y, radius: 0, rgb: drawRgb.slice(), note: '' };
+    const base = { id: nextId++, rgb: drawRgb.slice(), note: '' };
+    const s = tool === 'rectangle' ? { ...base, type: 'rectangle', leftx: p.x, rightx: p.x, upy: p.y, downy: p.y }
+      : tool === 'circle' ? { ...base, type: 'circle', centrex: p.x, centrey: p.y, radius: 0 }
+      : tool === 'triangle' ? { ...base, type: 'triangle', x1: p.x, y1: p.y, x2: p.x, y2: p.y, x3: p.x, y3: p.y }
+      : { ...base, type: 'text', leftx: p.x, upy: p.y, scale: textScale, text: 'Text' };
     doc.shapes.push(s);
-    gesture = { kind: 'draw', id: s.id, p0: p, x0: p.x, y0: p.y };
+    gesture = tool === 'triangle'
+      ? { kind: 'tri', id: s.id, phase: 1, pressed: true, p0: p }
+      : { kind: 'draw', id: s.id, p0: p, x0: p.x, y0: p.y };
     selectShape(s.id);
   }
   if (gesture) { gesture.pid = e.pointerId; cv.setPointerCapture(e.pointerId); }
@@ -884,7 +1063,32 @@ cv.addEventListener('pointermove', (e) => {
 function endGesture(e, cancel) {
   if (!gesture || (e && e.pointerId !== gesture.pid)) return;
   try { cv.releasePointerCapture(gesture.pid); } catch (err) { /* already released */ }
-  if (cancel) cancelGesture(); else { gesture = null; commit(); }
+  if (cancel) { cancelGesture(); syncAll(); return; }
+  const g = gesture, s = getShape(g.id);
+  if (g.kind === 'tri') {                         // a triangle stays open until its third corner
+    if (g.pressed) {
+      g.pressed = false;
+      if (s && (s.x2 !== s.x1 || s.y2 !== s.y1)) g.phase = 2;   // the first edge was dragged out
+    }
+    requestDraw();
+    return;
+  }
+  gesture = null;
+  commit();
+  syncAll();
+  if (g.kind === 'draw' && s && s.type === 'text') {             // type straight into the new text
+    const el = $('p_text');
+    if (el) { el.focus(); el.select(); }
+  }
+}
+// Second and third clicks of the triangle tool
+function triClick(p, e) {
+  const g = gesture, s = getShape(g.id);
+  if (!s) { gesture = null; return; }
+  const x = clamp(p.x, 0, MAX_X), y = clamp(p.y, 0, MAX_Y);
+  g.pid = e.pointerId;
+  if (g.phase === 1) { s.x2 = s.x3 = x; s.y2 = s.y3 = y; g.phase = 2; }
+  else { s.x3 = x; s.y3 = y; gesture = null; commit(); }
   syncAll();
 }
 cv.addEventListener('pointerup', (e) => endGesture(e, false));
@@ -894,35 +1098,52 @@ cv.addEventListener('pointerleave', () => { if (!gesture) { hover = null; update
 function cancelGesture() {
   if (!gesture) return;
   const s = getShape(gesture.id);
-  if (s && gesture.kind === 'draw') { doc.shapes = doc.shapes.filter((x) => x !== s); selectedId = null; }
+  if (s && (gesture.kind === 'draw' || gesture.kind === 'tri')) { doc.shapes = doc.shapes.filter((x) => x !== s); selectedId = null; }
   else if (s) Object.assign(s, gesture.orig);
   gesture = null;
+}
+
+// Shift a shape by (dx, dy) from position o, keeping it on the screen
+function translate(s, o, dx, dy) {
+  if (s.type === 'rectangle') {
+    dx = clamp(dx, -o.leftx, MAX_X - o.rightx); dy = clamp(dy, -o.upy, MAX_Y - o.downy);
+    s.leftx = o.leftx + dx; s.rightx = o.rightx + dx; s.upy = o.upy + dy; s.downy = o.downy + dy;
+  } else if (s.type === 'triangle') {
+    dx = clamp(dx, -Math.min(o.x1, o.x2, o.x3), MAX_X - Math.max(o.x1, o.x2, o.x3));
+    dy = clamp(dy, -Math.min(o.y1, o.y2, o.y3), MAX_Y - Math.max(o.y1, o.y2, o.y3));
+    for (const k of [1, 2, 3]) { s['x' + k] = o['x' + k] + dx; s['y' + k] = o['y' + k] + dy; }
+  } else {
+    const kx = s.type === 'circle' ? 'centrex' : 'leftx', ky = s.type === 'circle' ? 'centrey' : 'upy';
+    s[kx] = clamp(o[kx] + dx, 0, MAX_X); s[ky] = clamp(o[ky] + dy, 0, MAX_Y);
+  }
 }
 
 function applyGesture(p) {
   const s = getShape(gesture.id);
   if (!s) return;
-  const g = gesture, o = g.orig;
+  const g = gesture, o = g.orig, px = clamp(p.x, 0, MAX_X), py = clamp(p.y, 0, MAX_Y);
+  if (g.kind === 'tri') {
+    if (g.phase === 1) { s.x2 = s.x3 = px; s.y2 = s.y3 = py; } else { s.x3 = px; s.y3 = py; }
+    return;
+  }
   if (g.kind === 'draw') {
     if (s.type === 'rectangle') {
-      const x = clamp(p.x, 0, MAX_X), y = clamp(p.y, 0, MAX_Y);
-      s.leftx = Math.min(g.x0, x); s.rightx = Math.max(g.x0, x);
-      s.upy = Math.min(g.y0, y); s.downy = Math.max(g.y0, y);
-    } else s.radius = radiusTo(s.centrex, s.centrey, p);
+      s.leftx = Math.min(g.x0, px); s.rightx = Math.max(g.x0, px);
+      s.upy = Math.min(g.y0, py); s.downy = Math.max(g.y0, py);
+    } else if (s.type === 'circle') s.radius = radiusTo(s.centrex, s.centrey, p);
+    else if (s.type === 'text') { s.leftx = px; s.upy = py; }
     return;
   }
   const dx = Math.round(p.fx - g.p0.fx), dy = Math.round(p.fy - g.p0.fy);
-  if (g.kind === 'move') {
-    if (s.type === 'rectangle') {
-      const mx = clamp(dx, -o.leftx, MAX_X - o.rightx), my = clamp(dy, -o.upy, MAX_Y - o.downy);
-      s.leftx = o.leftx + mx; s.rightx = o.rightx + mx; s.upy = o.upy + my; s.downy = o.downy + my;
-    } else {
-      s.centrex = clamp(o.centrex + dx, 0, MAX_X); s.centrey = clamp(o.centrey + dy, 0, MAX_Y);
-    }
+  if (g.kind === 'move') { translate(s, o, dx, dy); return; }
+  if (s.type === 'circle') { s.radius = radiusTo(o.centrex, o.centrey, p); return; }
+  if (s.type === 'triangle') {
+    const k = g.h.vi;
+    s['x' + k] = clamp(o['x' + k] + dx, 0, MAX_X); s['y' + k] = clamp(o['y' + k] + dy, 0, MAX_Y);
     return;
   }
-  // resize: the opposite edge stays put, so dragging past it just flips the rectangle
-  if (s.type === 'circle') { s.radius = radiusTo(o.centrex, o.centrey, p); return; }
+  if (s.type === 'text') { s.scale = textScale = clamp(Math.round((p.fy - o.upy) / 7), 1, MAX_SCALE); return; }
+  // rectangle: the opposite edge stays put, so dragging past it just flips the rectangle
   const { hx, hy } = g.h;
   if (hx) {
     const m = clamp((hx < 0 ? o.leftx : o.rightx) + dx, 0, MAX_X), a = hx < 0 ? o.rightx : o.leftx;
@@ -941,7 +1162,7 @@ function updateCursor(p) {
     if (gesture) c = gesture.kind === 'move' ? 'move' : gesture.h.cur;
     else {
       const s = selected(), h = s && hitHandle(s, p);
-      if (h) c = h.cur; else if (p.inGrid && topShapeAt(p.x, p.y)) c = 'move';
+      if (h) c = h.cur; else if (p.inGrid && pickShapeAt(p.x, p.y)) c = 'move';
     }
   }
   cv.style.cursor = c;
@@ -1180,12 +1401,13 @@ function duplicateShape(id) {
   const i = indexOf(id);
   if (i < 0) return;
   const s = doc.shapes[i], c = { ...s, id: nextId++, rgb: s.rgb.slice() };
-  if (c.type === 'rectangle') {
-    const ox = c.rightx + 2 <= MAX_X ? 2 : c.leftx >= 2 ? -2 : 0, oy = c.downy + 2 <= MAX_Y ? 2 : c.upy >= 2 ? -2 : 0;
-    c.leftx += ox; c.rightx += ox; c.upy += oy; c.downy += oy;
-  } else {
-    c.centrex = c.centrex + 2 <= MAX_X ? c.centrex + 2 : c.centrex - 2;
-    c.centrey = c.centrey + 2 <= MAX_Y ? c.centrey + 2 : c.centrey - 2;
+  if (c.type === 'text') {                         // a copy of text goes on the next line
+    const step = 7 * c.scale + 1;
+    c.upy = c.upy + step <= MAX_Y ? c.upy + step : Math.max(0, c.upy - step);
+  } else {                                         // others shift 2 px, back the other way at an edge
+    translate(c, s, 2, 2);
+    const [a, b] = bounds(c), [a0, b0] = bounds(s);
+    if (a === a0 || b === b0) translate(c, s, a === a0 ? -2 : 2, b === b0 ? -2 : 2);
   }
   doc.shapes.splice(i + 1, 0, c);
   selectShape(c.id);
@@ -1194,12 +1416,7 @@ function duplicateShape(id) {
 function nudge(dx, dy) {
   const s = selected();
   if (!s) return;
-  if (s.type === 'rectangle') {
-    dx = clamp(dx, -s.leftx, MAX_X - s.rightx); dy = clamp(dy, -s.upy, MAX_Y - s.downy);
-    s.leftx += dx; s.rightx += dx; s.upy += dy; s.downy += dy;
-  } else {
-    s.centrex = clamp(s.centrex + dx, 0, MAX_X); s.centrey = clamp(s.centrey + dy, 0, MAX_Y);
-  }
+  translate(s, { ...s }, dx, dy);
   commit(); syncAll();
 }
 
@@ -1207,8 +1424,13 @@ const FIELDS = {
   rectangle: [['leftx', 7, MAX_X, 'leftmost column'], ['rightx', 7, MAX_X, 'rightmost column'],
               ['upy', 6, MAX_Y, 'top row'], ['downy', 6, MAX_Y, 'bottom row']],
   circle: [['centrex', 7, MAX_X, 'centre column'], ['centrey', 6, MAX_Y, 'centre row'], ['radius', 7, MAX_R, 'pixels']],
+  triangle: [['x1', 7, MAX_X, 'corner 1 column'], ['y1', 6, MAX_Y, 'corner 1 row'],
+             ['x2', 7, MAX_X, 'corner 2 column'], ['y2', 6, MAX_Y, 'corner 2 row'],
+             ['x3', 7, MAX_X, 'corner 3 column'], ['y3', 6, MAX_Y, 'corner 3 row']],
+  text: [['leftx', 7, MAX_X, 'left column of the first letter'], ['upy', 6, MAX_Y, 'top row'],
+         ['scale', 4, MAX_SCALE, '1 = 5x7, 2 = 10x14, 3 = 15x21 ...', 1]],
 };
-// leftx <= rightx and upy <= downy: [partner, +1 means this must be <= partner]
+// Rectangles keep leftx <= rightx and upy <= downy: [partner, +1 means this must be <= partner]
 const PAIR = { leftx: ['rightx', 1], rightx: ['leftx', -1], upy: ['downy', 1], downy: ['upy', -1] };
 
 const ICON = {
@@ -1226,6 +1448,8 @@ function buildProps() {
       <ul>
         <li><b>Rectangle</b> (R): drag from one corner to the opposite corner.</li>
         <li><b>Circle</b> (C): press at the centre, drag out the radius.</li>
+        <li><b>Triangle</b> (T): click the three corners, or drag the first edge and click the third corner.</li>
+        <li><b>Text</b> (A): click where the top-left of the text goes, then type in the Text box.</li>
         <li><b>Select</b> (V): click a shape, drag to move it, drag the handles to resize.</li>
         <li>Arrow keys nudge by 1 px (Shift: 8). Delete removes, Ctrl+D duplicates, [ and ] change the draw order.</li>
       </ul></div>`;
@@ -1234,11 +1458,16 @@ function buildProps() {
   const f = FIELDS[s.type];
   box.innerHTML = `
     <div class="prop-title"><span class="sw" id="propSw"></span><b class="mono" id="propName"></b><small id="propPos"></small></div>
+    ${s.type === 'text' ? `
+    <div class="prop-text">
+      <label for="p_text">Text <span class="w">a–z A–Z 0–9 , . and space</span></label>
+      <input id="p_text" class="mono" maxlength="32" autocomplete="off" spellcheck="false">
+    </div>` : ''}
     <div class="prop-grid${f.length === 3 ? ' three' : ''}">
-      ${f.map(([k, bits, max, hint]) => `
+      ${f.map(([k, bits, max, hint, min = 0]) => `
         <div class="prop">
-          <label for="p_${k}" title="${hint}">.${k} <span class="w">${bits}'d · 0–${max}</span></label>
-          <input type="number" class="num" id="p_${k}" data-k="${k}" min="0" max="${max}" step="1">
+          <label for="p_${k}" title="${hint}">.${k} <span class="w">${bits}'d · ${min}–${max}</span></label>
+          <input type="number" class="num" id="p_${k}" data-k="${k}" min="${min}" max="${max}" step="1">
         </div>`).join('')}
     </div>
     <div class="prop-info" id="propInfo"></div>
@@ -1254,11 +1483,11 @@ function buildProps() {
 
   // Handlers look the shape up by id: undo/redo replaces the shape objects.
   const id = s.id;
-  for (const [k, , max] of f) {
+  for (const [k, , max, , min = 0] of f) {
     const el = $('p_' + k);
     const valid = (sh, v) => {
-      if (!/^\d{1,3}$/.test(String(v)) || +v > max) return false;
-      const pr = PAIR[k];
+      if (!/^\d{1,3}$/.test(String(v)) || +v > max || +v < min) return false;
+      const pr = sh.type === 'rectangle' && PAIR[k];
       return !pr || (pr[1] > 0 ? +v <= sh[pr[0]] : +v >= sh[pr[0]]);
     };
     el.addEventListener('input', () => {
@@ -1272,12 +1501,31 @@ function buildProps() {
       const sh = getShape(id);
       if (!sh) return;
       el.classList.remove('bad');
-      const v = toInt(el.value, 0, max), pr = PAIR[k];
+      const v = toInt(el.value, min, max), pr = sh.type === 'rectangle' && PAIR[k];
       sh[k] = v;
+      if (k === 'scale') textScale = v;
       if (pr && (pr[1] > 0 ? v > sh[pr[0]] : v < sh[pr[0]])) sh[pr[0]] = v;   // a committed value pushes its partner edge
       el.value = v;
       commit(); syncAll();
     });
+  }
+  const tx = $('p_text');
+  if (tx) {
+    tx.value = s.text;
+    tx.addEventListener('input', () => {
+      const sh = getShape(id);
+      if (!sh) return;
+      const clean = cleanText(tx.value);
+      if (clean !== tx.value) {                        // drop characters the font cannot draw
+        const caret = Math.max(0, (tx.selectionStart || 0) - (tx.value.length - clean.length));
+        tx.value = clean;
+        tx.setSelectionRange(caret, caret);
+      }
+      sh.text = clean;
+      syncLive();
+    });
+    tx.addEventListener('change', () => { commit(); syncAll(); });
+    tx.addEventListener('keydown', (e) => { if (e.key === 'Enter') tx.blur(); });
   }
   const note = $('p_note');
   note.value = s.note || '';
@@ -1311,13 +1559,21 @@ function syncProps() {
     if (document.activeElement !== el) { el.value = s[k]; el.classList.remove('bad'); }
   }
   setVal($('p_note'), s.note || '');
+  if ($('p_text')) setVal($('p_text'), s.text);
   let info;
+  const [a, b, c, e] = bounds(s), off = a < 0 || b < 0 || c > MAX_X || e > MAX_Y ? ' · partly off-screen (clipped)' : '';
   if (s.type === 'rectangle') {
     const w = s.rightx - s.leftx + 1, h = s.downy - s.upy + 1;
     info = `${w} × ${h} px · ${w * h} pixels`;
+  } else if (s.type === 'circle') {
+    info = `diameter ${2 * s.radius + 1} px` + off;
+  } else if (s.type === 'triangle') {
+    let n = 0;
+    for (let y = b; y <= e; y++) for (let x = a; x <= c; x++) if (triInside(s, x, y)) n++;
+    info = `${n} pixels`;
   } else {
-    const d = 2 * s.radius + 1, [a, b, c, e] = bounds(s);
-    info = `diameter ${d} px` + (a < 0 || b < 0 || c > MAX_X || e > MAX_Y ? ' · partly off-screen (clipped)' : '');
+    const n = layoutText(s).length;
+    info = `${n} character instance${n === 1 ? '' : 's'} · ${c - a + 1} × ${e - b + 1} px` + off;
   }
   $('propInfo').textContent = info;
   const ops = $('props').querySelectorAll('[data-op]');
@@ -1328,12 +1584,27 @@ function syncProps() {
   });
 }
 
-const summary = (s) => s.type === 'rectangle'
-  ? `x ${s.leftx}–${s.rightx} · y ${s.upy}–${s.downy}`
-  : `centre (${s.centrex}, ${s.centrey}) · r ${s.radius}`;
+function summary(s) {
+  if (s.type === 'rectangle') return `x ${s.leftx}–${s.rightx} · y ${s.upy}–${s.downy}`;
+  if (s.type === 'circle') return `centre (${s.centrex}, ${s.centrey}) · r ${s.radius}`;
+  if (s.type === 'triangle') return `(${s.x1},${s.y1}) (${s.x2},${s.y2}) (${s.x3},${s.y3})`;
+  return `"${s.text}" · scale ${s.scale} · at (${s.leftx}, ${s.upy})`;
+}
+
+// Every Verilog instance in draw order. A text shape becomes one `character`
+// per visible letter: text1_1, text1_2 ...
+function instances() {
+  const names = nameMap(), list = [];
+  for (const s of doc.shapes) {
+    const nm = names.get(s.id);
+    if (s.type !== 'text') list.push({ s, module: s.type, name: nm, first: true });
+    else layoutText(s).forEach((g, i) => list.push({ s, module: 'character', name: `${nm}_${i + 1}`, ch: g.c, x: g.x, first: i === 0 }));
+  }
+  return list;
+}
 function lastOutput() {
-  const n = doc.shapes.length;
-  return n ? 'after_' + nameMap().get(doc.shapes[n - 1].id) : 'background_colour';
+  const L = instances();
+  return L.length ? 'after_' + L[L.length - 1].name : 'background_colour';
 }
 
 function syncLayers() {
@@ -1345,7 +1616,7 @@ function syncLayers() {
     const note = s.note ? ` <span style="font-weight:400;color:var(--muted)">· ${esc(s.note)}</span>` : '';
     html += `<li class="layer${s.id === selectedId ? ' sel' : ''}" draggable="true" data-id="${s.id}">
       <span class="idx">${i + 1}</span><span class="sw" style="background:${cssOf(s.rgb)}"></span>
-      <span class="nm"><b><span class="mono">${names.get(s.id)}</span> <span class="hex mono">${v565(s.rgb)}</span>${note}</b><small class="mono">${summary(s)}</small></span>
+      <span class="nm"><b><span class="mono">${names.get(s.id)}</span> <span class="hex mono">${v565(s.rgb)}</span>${note}</b><small class="mono">${esc(summary(s))}</small></span>
       <span class="ops">
         <button data-act="up" title="Move up: drawn earlier, further back" aria-label="Move up"${i === 0 ? ' disabled' : ''}>${ICON.up}</button>
         <button data-act="down" title="Move down: drawn later, in front" aria-label="Move down"${i === n - 1 ? ' disabled' : ''}>${ICON.down}</button>
@@ -1466,42 +1737,48 @@ const TOP_TAIL = (last) => [
 
 function genLines() {
   const L = [], add = (t, id = null) => L.push({ t, id });
-  const names = nameMap(), shapes = doc.shapes, n = shapes.length, full = opts.full, ind = full ? '    ' : '';
+  const names = nameMap(), n = doc.shapes.length, insts = instances(), full = opts.full, ind = full ? '    ' : '';
   const last = lastOutput(), bg = to565(doc.bg), [br, bgg, bb] = split565(bg);
   const bgAssign = `${ind}assign background_colour = 16'h${hex4(bg)};` + (opts.comments ? ` // bg colour: R=${br} G=${bgg} B=${bb}` : '');
 
   if (full) { TOP_HEAD.forEach((t) => add(t)); add(bgAssign); TOP_MID.forEach((t) => add(t)); }
   else if (opts.declareBg) { add('wire [15:0] background_colour;'); add(bgAssign); add(''); }
 
-  if (n) {
+  if (insts.length) {
     if (opts.comments) add(`${ind}// Each shape draws over the output of the one before it.`);
-    for (const s of shapes) add(`${ind}wire [15:0] after_${names.get(s.id)};`, s.id);
+    for (const k of insts) add(`${ind}wire [15:0] after_${k.name};`, k.s.id);
     add('');
   }
   let prev = 'background_colour';
-  shapes.forEach((s, i) => {
-    const nm = names.get(s.id), c = to565(s.rgb), [r5, g6, b5] = split565(c);
-    if (opts.comments) {
+  for (const k of insts) {
+    const s = k.s, i = doc.shapes.indexOf(s), c = to565(s.rgb), [r5, g6, b5] = split565(c);
+    if (opts.comments && k.first) {
       const where = i === 0 ? 'bottom' : i === n - 1 ? 'top' : `layer ${i + 1}`;
-      add(`${ind}// ${nm} (${where})${s.note ? ': ' + s.note : ''}, drawn over ${prev}`, s.id);
+      const what = s.type === 'text' ? `${names.get(s.id)} "${s.text}" at scale ${s.scale}` : names.get(s.id);
+      add(`${ind}// ${what} (${where})${s.note ? ': ' + s.note : ''}, drawn over ${prev}`, s.id);
     }
-    add(`${ind}${s.type} ${nm} (`, s.id);
+    add(`${ind}${k.module} ${k.name} (`, s.id);
     const ports = [['pixel_index', 'pixel_index']];
     if (s.type === 'rectangle') {
       ports.push(['leftx', `7'd${s.leftx}`], ['rightx', `7'd${s.rightx}`], ['upy', `6'd${s.upy}`], ['downy', `6'd${s.downy}`]);
-    } else {
+    } else if (s.type === 'circle') {
       ports.push(['centrex', `7'd${s.centrex}`], ['centrey', `6'd${s.centrey}`], ['radius', `7'd${s.radius}`]);
+    } else if (s.type === 'triangle') {
+      ports.push(['x1', `7'd${s.x1}`], ['y1', `6'd${s.y1}`], ['x2', `7'd${s.x2}`], ['y2', `6'd${s.y2}`],
+                 ['x3', `7'd${s.x3}`], ['y3', `6'd${s.y3}`]);
+    } else {
+      ports.push(['ascii', `"${k.ch}"`], ['leftx', `7'd${k.x}`], ['upy', `6'd${s.upy}`], ['scale', `4'd${s.scale}`]);
     }
-    ports.push(['colour', `16'h${hex4(c)}`], ['background_colour', prev], ['oled_data', `after_${nm}`]);
-    ports.forEach(([p, v], k) => {
-      let t = `${ind}    .${p.padEnd(17)} (${v})${k < ports.length - 1 ? ',' : ''}`;
-      if (p === 'colour' && opts.comments) t += ` // R=${r5} G=${g6} B=${b5} (#${hex6(s.rgb)})`;
+    ports.push(['colour', `16'h${hex4(c)}`], ['background_colour', prev], ['oled_data', `after_${k.name}`]);
+    ports.forEach(([p, v], j) => {
+      let t = `${ind}    .${p.padEnd(17)} (${v})${j < ports.length - 1 ? ',' : ''}`;
+      if (p === 'colour' && opts.comments && k.first) t += ` // R=${r5} G=${g6} B=${b5} (#${hex6(s.rgb)})`;
       add(t, s.id);
     });
     add(`${ind});`, s.id);
     add('');
-    prev = `after_${nm}`;
-  });
+    prev = `after_${k.name}`;
+  }
 
   if (full) TOP_TAIL(last).forEach((t) => add(t));
   else if (opts.comments) add(`// Send ${last} to the display: Oled_Display ... .pixel_data(${last})`);
@@ -1510,11 +1787,11 @@ function genLines() {
 }
 const genText = () => genLines().map((l) => l.t).join('\n') + '\n';
 
-const TOKENS = /(`\w+)|(\b\d+'[sS]?[dDhHbBoO][0-9a-fA-F_]+\b|\b\d+(?:ns|ps)?\b)|(\.\w+)(?=\s*\()|\b(module|endmodule|input|output|inout|wire|reg|assign|always|begin|end|if|else|parameter|localparam)\b/g;
+const TOKENS = /(&quot;.*?&quot;)|(`\w+)|(\b\d+'[sS]?[dDhHbBoO][0-9a-fA-F_]+\b|\b\d+(?:ns|ps)?\b)|(\.\w+)(?=\s*\()|\b(module|endmodule|input|output|inout|wire|reg|assign|always|begin|end|if|else|parameter|localparam)\b/g;
 function highlight(t) {
   const ci = t.indexOf('//'), code = ci >= 0 ? t.slice(0, ci) : t, com = ci >= 0 ? t.slice(ci) : '';
-  let h = esc(code).replace(TOKENS, (m, dir, num, port) =>
-    `<span class="${dir ? 'tk-kw' : num ? 'tk-num' : port ? 'tk-port' : 'tk-kw'}">${m}</span>`);
+  let h = esc(code).replace(TOKENS, (m, str, dir, num, port) =>
+    `<span class="${str || num ? 'tk-num' : port ? 'tk-port' : 'tk-kw'}">${m}</span>`);
   if (com) h += `<span class="tk-com">${esc(com)}</span>`;
   return h || ' ';
 }
@@ -1569,6 +1846,8 @@ async function copyCode() {
    Import: rebuild the drawing from existing Verilog
    ===================================================================== */
 function parseNum(v) {
+  const str = /^\s*"(.)"\s*$/.exec(String(v == null ? '' : v));    // "A" is the 8-bit code of A
+  if (str) return str[1].charCodeAt(0);
   v = String(v == null ? '' : v).replace(/[\s_]/g, '');
   const m = /^(\d*)'[sS]?([dDhHbBoO])([0-9a-fA-F]+)$/.exec(v);
   if (m) return parseInt(m[3], { d: 10, h: 16, b: 2, o: 8 }[m[2].toLowerCase()]);
@@ -1576,7 +1855,7 @@ function parseNum(v) {
 }
 function parseVerilog(text) {
   const src = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/.*$/gm, '');
-  const inst = [], re = /\b(rectangle|circle)\s+(\w+)\s*\(([\s\S]*?)\)\s*;/g;
+  const inst = [], re = /\b(rectangle|circle|triangle|character)\s+(\w+)\s*\(([\s\S]*?)\)\s*;/g;
   let m;
   while ((m = re.exec(src))) {
     const ports = {}, pr = /\.(\w+)\s*\(\s*([^()]*?)\s*\)/g;
@@ -1584,7 +1863,7 @@ function parseVerilog(text) {
     while ((p = pr.exec(m[3]))) ports[p[1]] = p[2];
     inst.push({ type: m[1], name: m[2], ports });
   }
-  if (!inst.length) throw new Error('No rectangle or circle instances found.');
+  if (!inst.length) throw new Error('No rectangle, circle, triangle or character instances found.');
 
   let bg = null;
   const bm = /\bassign\s+background_colour\s*=\s*([^;]+);/.exec(src);
@@ -1612,14 +1891,32 @@ function parseVerilog(text) {
   const shapes = [], skipped = [];
   for (const i of order) {
     const P = (k) => parseNum(i.ports[k]), col = P('colour');
-    const keys = i.type === 'rectangle' ? ['leftx', 'rightx', 'upy', 'downy'] : ['centrex', 'centrey', 'radius'];
+    const rgb = isNaN(col) ? [255, 255, 255] : from565(col & 0xFFFF);
+    if (i.type === 'character') {
+      const code = P('ascii'), c = String.fromCharCode(code), lx = P('leftx'), uy = P('upy'), sc = P('scale');
+      if ([code, lx, uy, sc].some((v) => isNaN(v)) || !FONT[c] || sc < 1) { skipped.push(i.name); continue; }
+      // Letters join one text shape when each sits where the font spacing puts the next one
+      const t = shapes[shapes.length - 1];
+      if (t && t.type === 'text' && t.upy === uy && t.scale === sc && to565(t.rgb) === to565(rgb)) {
+        const gap = lx - t.end;
+        if (gap === 0 || (gap > 0 && gap % (5 * sc) === 0)) {
+          t.text += ' '.repeat(gap / (5 * sc)) + c;
+          t.end = lx + (GLYPH_W[c] + 2) * sc;
+          continue;
+        }
+      }
+      shapes.push({ type: 'text', leftx: lx, upy: uy, scale: sc, text: c, rgb, note: '', end: lx + (GLYPH_W[c] + 2) * sc });
+      continue;
+    }
+    const keys = { rectangle: ['leftx', 'rightx', 'upy', 'downy'], circle: ['centrex', 'centrey', 'radius'],
+                   triangle: ['x1', 'y1', 'x2', 'y2', 'x3', 'y3'] }[i.type];
     const vals = keys.map(P);
     if (vals.some((v) => isNaN(v))) { skipped.push(i.name); continue; }
-    const s = { type: i.type, rgb: isNaN(col) ? [255, 255, 255] : from565(col & 0xFFFF), note: '' };
+    const s = { type: i.type, rgb, note: '' };
     keys.forEach((k, j) => { s[k] = vals[j]; });
     shapes.push(s);
   }
-  if (skipped.length) warn += ` Skipped (non-constant ports): ${skipped.join(', ')}.`;
+  if (skipped.length) warn += ` Skipped (non-constant ports or unsupported character): ${skipped.join(', ')}.`;
   return { bg, shapes, warn };
 }
 
@@ -1657,8 +1954,11 @@ const HINTS = {
   select: 'Click a shape to select it · drag to move · drag handles to resize · arrow keys nudge',
   rectangle: 'Drag from one corner to the opposite corner · Alt+click picks a colour',
   circle: 'Press at the centre, drag out the radius · Alt+click picks a colour',
+  triangle: 'Click the 3 corners (or drag the first edge, then click the 3rd) · Esc cancels',
+  text: 'Click where the top-left of the text goes, then type in the Text box',
 };
 function setTool(t) {
+  if (gesture && gesture.kind === 'tri') endGesture(null, true);    // drop a half-drawn triangle
   tool = t;
   document.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
   $('statusHint').textContent = HINTS[t];
@@ -1704,6 +2004,8 @@ document.addEventListener('keydown', (e) => {
     case 'v': setTool('select'); break;
     case 'r': setTool('rectangle'); break;
     case 'c': setTool('circle'); break;
+    case 't': setTool('triangle'); break;
+    case 'a': setTool('text'); break;
     case 'g': opts.grid = !opts.grid; $('gridChk').checked = opts.grid; save(); requestDraw(); break;
     case 'Escape':
       if (gesture) endGesture(null, true);
