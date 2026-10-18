@@ -5,6 +5,8 @@
 // The modules used by My_Top_Module, combined into one source file:
 //   rectangle      fills a rectangle over a background colour   (was rectangle.v)
 //   circle         fills a circle over a background colour      (was circle.v)
+//   triangle       fills a triangle given its 3 corners
+//   character      one 5x7 font character (petabyt/font), scalable 1x, 2x, 3x ...
 //   clock_divider  100 MHz -> 6.25 MHz clock for the OLED       (was clockmultiplier.v)
 //   Oled_Display   Pmod OLEDrgb driver, unmodified              (was Oled_Display.v)
 //////////////////////////////////////////////////////////////////////////////////
@@ -94,6 +96,245 @@ module circle (
     wire inside_circle = (distance_squared <= radius_squared);
 
     assign oled_data = inside_circle ? colour : background_colour;
+
+endmodule
+
+//================================================================================
+// triangle
+//================================================================================
+/*
+sample code in topmodule:
+
+triangle triangle1 (
+    .pixel_index       (pixel_index),
+    .x1                (7'd48),
+    .y1                (6'd10),
+    .x2                (7'd20),
+    .y2                (6'd50),
+    .x3                (7'd76),
+    .y3                (6'd50),
+    .colour            (16'hFFE0),
+    .background_colour (background_colour),
+    .oled_data         (after_triangle1)
+);
+*/
+
+module triangle (
+    input  wire [12:0] pixel_index,
+    input  wire [6:0]  x1,
+    input  wire [5:0]  y1,
+    input  wire [6:0]  x2,
+    input  wire [5:0]  y2,
+    input  wire [6:0]  x3,
+    input  wire [5:0]  y3,
+    input  wire [15:0] colour,
+    input  wire [15:0] background_colour,
+    output wire [15:0] oled_data
+);
+
+    // Convert pixel index into OLED coordinates.
+    wire [6:0] x = pixel_index % 13'd96;
+    wire [5:0] y = pixel_index / 13'd96;
+
+    // Signed copies of every point so differences can go negative.
+    wire signed [8:0] px = {2'b00, x};
+    wire signed [8:0] py = {3'b000, y};
+    wire signed [8:0] ax = {2'b00, x1};
+    wire signed [8:0] ay = {3'b000, y1};
+    wire signed [8:0] bx = {2'b00, x2};
+    wire signed [8:0] by = {3'b000, y2};
+    wire signed [8:0] cx = {2'b00, x3};
+    wire signed [8:0] cy = {3'b000, y3};
+
+    // Edge functions (2D cross products): the sign says which side of each
+    // edge the pixel is on, and 0 means the pixel lies exactly on that edge.
+    wire signed [17:0] e1 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+    wire signed [17:0] e2 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
+    wire signed [17:0] e3 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+
+    wire any_negative = e1[17] | e2[17] | e3[17];
+    wire any_positive = (~e1[17] & (|e1)) | (~e2[17] & (|e2)) | (~e3[17] & (|e3));
+
+    // Bounding box of the corners, so a flat triangle (all corners in a line)
+    // draws just the line segment between them.
+    wire [6:0] min_x = (x1 < x2) ? ((x1 < x3) ? x1 : x3) : ((x2 < x3) ? x2 : x3);
+    wire [6:0] max_x = (x1 > x2) ? ((x1 > x3) ? x1 : x3) : ((x2 > x3) ? x2 : x3);
+    wire [5:0] min_y = (y1 < y2) ? ((y1 < y3) ? y1 : y3) : ((y2 < y3) ? y2 : y3);
+    wire [5:0] max_y = (y1 > y2) ? ((y1 > y3) ? y1 : y3) : ((y2 > y3) ? y2 : y3);
+    wire inside_box = (x >= min_x) && (x <= max_x) && (y >= min_y) && (y <= max_y);
+
+    // Inside, or on an edge, when the edges never disagree in sign.
+    // This works whichever order (clockwise or not) the corners are given in.
+    wire inside_triangle = inside_box && !(any_negative && any_positive);
+
+    assign oled_data = inside_triangle ? colour : background_colour;
+
+endmodule
+
+//================================================================================
+// character  (5x7 font from https://github.com/petabyt/font)
+//================================================================================
+/*
+Font data is taken unchanged from font.h in https://github.com/petabyt/font :
+
+MIT License
+
+Copyright (c) 2020 Petabyte
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Draws one character whose top-left pixel is (leftx, upy). Every font pixel
+becomes a scale x scale block, so the character box is 5*scale wide and
+7*scale tall: scale 1 = 5x7, 2 = 10x14, 3 = 15x21 ... (scale 0 draws nothing).
+Supported: a-z, A-Z, 0-9, comma and period. Any other code draws nothing.
+
+sample code in topmodule:
+
+character text1_1 (
+    .pixel_index       (pixel_index),
+    .ascii             ("A"),
+    .leftx             (7'd10),
+    .upy               (6'd20),
+    .scale             (4'd2),
+    .colour            (16'hFFFF),
+    .background_colour (background_colour),
+    .oled_data         (after_text1_1)
+);
+*/
+
+module character (
+    input  wire [12:0] pixel_index,
+    input  wire [7:0]  ascii,
+    input  wire [6:0]  leftx,
+    input  wire [5:0]  upy,
+    input  wire [3:0]  scale,
+    input  wire [15:0] colour,
+    input  wire [15:0] background_colour,
+    output wire [15:0] oled_data
+);
+
+    // Convert pixel index into OLED coordinates.
+    wire [6:0] x = pixel_index % 13'd96;
+    wire [5:0] y = pixel_index / 13'd96;
+
+    // Offset of this pixel from the character's top-left pixel.
+    wire [7:0] dx = x - leftx;
+    wire [7:0] dy = y - upy;
+
+    // Multiples of scale, so the font row and column can be found
+    // with comparisons instead of a divider.
+    wire [7:0] s1 = scale;
+    wire [7:0] s2 = s1 << 1;
+    wire [7:0] s3 = s2 + s1;
+    wire [7:0] s4 = s1 << 2;
+    wire [7:0] s5 = s4 + s1;
+    wire [7:0] s6 = s4 + s2;
+    wire [7:0] s7 = s6 + s1;
+
+    // Font column (0-4) = dx / scale and font row (0-6) = dy / scale.
+    wire [2:0] col = (dx < s1) ? 3'd0 : (dx < s2) ? 3'd1 : (dx < s3) ? 3'd2 :
+                     (dx < s4) ? 3'd3 : 3'd4;
+    wire [2:0] row = (dy < s1) ? 3'd0 : (dy < s2) ? 3'd1 : (dy < s3) ? 3'd2 :
+                     (dy < s4) ? 3'd3 : (dy < s5) ? 3'd4 : (dy < s6) ? 3'd5 : 3'd6;
+
+    // Inside the 5*scale x 7*scale character box?
+    wire inside_box = (x >= leftx) && (y >= upy) && (dx < s5) && (dy < s7);
+
+    // 35 font bits, top row first. Bit 34 is the top-left font pixel.
+    wire [34:0] glyph = font_5x7(ascii);
+    wire [5:0]  bit_index = 6'd34 - (row * 6'd5 + col);
+    wire inside_character = inside_box && glyph[bit_index];
+
+    assign oled_data = inside_character ? colour : background_colour;
+
+    // One row of 5 bits per font row, '1' = pixel on (a '#' in font.h).
+    function [34:0] font_5x7;
+        input [7:0] c;
+        case (c)
+            //                  row0  row1  row2  row3  row4  row5  row6
+            "a": font_5x7 = 35'b00000_00000_01110_00001_01111_10001_01111;
+            "b": font_5x7 = 35'b10000_10000_11110_10001_10001_10001_11110;
+            "c": font_5x7 = 35'b00000_00000_01110_10001_10000_10001_01110;
+            "d": font_5x7 = 35'b00001_00001_01111_10001_10001_10001_01111;
+            "e": font_5x7 = 35'b00000_00000_01110_10001_11111_10000_01111;
+            "f": font_5x7 = 35'b00110_01001_01000_11100_01000_01000_01000;
+            "g": font_5x7 = 35'b00000_01111_10001_10001_01111_00001_11110;
+            "h": font_5x7 = 35'b10000_10000_11110_10001_10001_10001_10001;
+            "i": font_5x7 = 35'b10000_00000_10000_10000_10000_10000_10000;
+            "j": font_5x7 = 35'b00001_00000_00011_00001_00001_10001_01110;
+            "k": font_5x7 = 35'b10000_10000_10001_10010_11100_10010_10001;
+            "l": font_5x7 = 35'b10000_10000_10000_10000_10000_10000_11000;
+            "m": font_5x7 = 35'b00000_00000_11110_10101_10101_10101_10101;
+            "n": font_5x7 = 35'b00000_00000_11110_10001_10001_10001_10001;
+            "o": font_5x7 = 35'b00000_00000_01110_10001_10001_10001_01110;
+            "p": font_5x7 = 35'b00000_01110_01001_01001_01110_01000_01000;
+            "q": font_5x7 = 35'b00000_00000_00111_01001_00111_00001_00001;
+            "r": font_5x7 = 35'b00000_00000_10111_11000_10000_10000_10000;
+            "s": font_5x7 = 35'b00000_00000_01111_10000_01110_00001_11110;
+            "t": font_5x7 = 35'b01000_01000_11100_01000_01000_01000_00110;
+            "u": font_5x7 = 35'b00000_00000_10001_10001_10001_10001_01110;
+            "v": font_5x7 = 35'b00000_00000_10001_10001_10001_01010_00100;
+            "w": font_5x7 = 35'b00000_00000_10001_10001_10101_10101_01010;
+            "x": font_5x7 = 35'b00000_00000_10001_01010_00100_01010_10001;
+            "y": font_5x7 = 35'b00000_00000_10001_10001_01111_00001_11110;
+            "z": font_5x7 = 35'b00000_00000_11111_00010_00100_01000_11111;
+            "A": font_5x7 = 35'b01110_10001_10001_10001_11111_10001_10001;
+            "B": font_5x7 = 35'b11110_10001_10001_11110_10001_10001_11110;
+            "C": font_5x7 = 35'b01111_10000_10000_10000_10000_10000_01111;
+            "D": font_5x7 = 35'b11110_10001_10001_10001_10001_10001_11110;
+            "E": font_5x7 = 35'b11111_10000_10000_11111_10000_10000_11111;
+            "F": font_5x7 = 35'b11111_10000_10000_11111_10000_10000_10000;
+            "G": font_5x7 = 35'b01111_10000_10000_10011_10001_10001_01111;
+            "H": font_5x7 = 35'b10001_10001_10001_11111_10001_10001_10001;
+            "I": font_5x7 = 35'b10000_10000_10000_10000_10000_10000_10000;
+            "J": font_5x7 = 35'b00001_00001_00001_00001_00001_00001_11110;
+            "K": font_5x7 = 35'b10001_10010_10100_11000_10100_10010_10001;
+            "L": font_5x7 = 35'b10000_10000_10000_10000_10000_10000_11111;
+            "M": font_5x7 = 35'b10001_11011_10101_10001_10001_10001_10001;
+            "N": font_5x7 = 35'b10001_11001_10101_10011_10001_10001_10001;
+            "O": font_5x7 = 35'b01110_10001_10001_10001_10001_10001_01110;
+            "P": font_5x7 = 35'b11110_10001_10001_11110_10000_10000_10000;
+            "Q": font_5x7 = 35'b01110_10001_10001_10001_10001_10011_01111;
+            "R": font_5x7 = 35'b11110_10001_10001_10001_11110_10001_10001;
+            "S": font_5x7 = 35'b01111_10000_10000_01110_00001_00001_11110;
+            "T": font_5x7 = 35'b11111_00100_00100_00100_00100_00100_00100;
+            "U": font_5x7 = 35'b10001_10001_10001_10001_10001_10001_01110;
+            "V": font_5x7 = 35'b10001_10001_10001_10001_10001_01010_00100;
+            "W": font_5x7 = 35'b10001_10001_10001_10001_10101_11011_10001;
+            "X": font_5x7 = 35'b10001_10001_01010_00100_01010_10001_10001;
+            "Y": font_5x7 = 35'b10001_10001_10001_01110_00100_00100_00100;
+            "Z": font_5x7 = 35'b11111_00001_00010_00100_01000_10000_11111;
+            "0": font_5x7 = 35'b01110_10001_10011_10101_11001_10001_01110;
+            "1": font_5x7 = 35'b11000_01000_01000_01000_01000_01000_01000;
+            "2": font_5x7 = 35'b01110_10001_00001_00110_01000_10000_11111;
+            "3": font_5x7 = 35'b11110_00001_00001_01110_00001_00001_11110;
+            "4": font_5x7 = 35'b10001_10001_10001_11111_00001_00001_00001;
+            "5": font_5x7 = 35'b11111_10000_10000_11110_00001_00001_11110;
+            "6": font_5x7 = 35'b01111_10000_10000_01110_10001_10001_01110;
+            "7": font_5x7 = 35'b11111_00001_00001_00110_01000_01000_01000;
+            "8": font_5x7 = 35'b01110_10001_10001_01110_10001_10001_01110;
+            "9": font_5x7 = 35'b01110_10001_10001_01111_00001_00001_01110;
+            ",": font_5x7 = 35'b00000_00000_00000_00000_00000_00100_01000;
+            ".": font_5x7 = 35'b00000_00000_00000_00000_00000_00000_10000;
+            default: font_5x7 = 35'b0;
+        endcase
+    endfunction
 
 endmodule
 
