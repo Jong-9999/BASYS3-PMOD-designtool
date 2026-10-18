@@ -25,3 +25,10 @@ just follow the below steps:
 
 
 great successs!
+
+
+
+Credits:
+
+font design by https://github.com/petabyt
+oled driver code by Joel Holdsworth <joel@airwebreathe.org.uk>
