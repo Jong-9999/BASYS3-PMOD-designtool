@@ -1410,14 +1410,13 @@ $('layers').addEventListener('dragend', () => { dragId = null; clearDrop(); });
 /* =====================================================================
    Verilog generation
    ===================================================================== */
-// Full-module mode reproduces My_Top_Module.v around the generated shapes.
+// Full-module mode wraps the generated shapes in My_Top_Module.v
+// (clk and JB only; the display reset is tied to 0).
 const TOP_HEAD = [
   '`timescale 1ns / 1ps',
   '',
   'module My_Top_Module (',
   '    input clk,',
-  '    input btnU,',
-  '    input [15:0] sw,',
   '    output [7:0] JB',
   ');',
   '',
@@ -1431,8 +1430,8 @@ const TOP_HEAD = [
 ];
 const TOP_MID = [
   '',
-  '    // Hold reset to btnU',
-  '    wire resetdisplay = btnU;',
+  '    // Reset hardcoded to 0',
+  '    wire resetdisplay = 1\'b0;',
   '',
 ];
 const TOP_TAIL = (last) => [
