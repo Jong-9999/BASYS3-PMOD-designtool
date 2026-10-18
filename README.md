@@ -2,6 +2,9 @@
 
 
 
+xc7a35tcpg236-1
+
+
 make the Basys 3 pmod (96*64) screen easy to use!
 
 
