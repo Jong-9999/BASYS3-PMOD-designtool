@@ -4,6 +4,7 @@
 
 xc7a35tcpg236-1
 
+access the html via github pages here:https://jong-9999.github.io/BASYS3-PMOD-designtool/
 
 make the Basys 3 pmod (96*64) screen easy to use!
 
